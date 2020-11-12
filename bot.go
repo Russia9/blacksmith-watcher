@@ -1,22 +1,20 @@
 package main
 
 import (
-	"cw-broker/messages"
+	"blacksmith-watcher/commands"
+	"blacksmith-watcher/types"
+	"blacksmith-watcher/utils"
 	"encoding/json"
-	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/getsentry/sentry-go"
-	"github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"gopkg.in/tucnak/telebot.v2"
 	"time"
 )
 
-func InitBot(
-	telegramToken string,
-	logger *logrus.Logger,
-	consumer *kafka.Consumer,
-) error {
-	bot, err := telebot.NewBot(
+func InitBot(telegramToken string, consumer *kafka.Consumer) error {
+	var err error
+	utils.Bot, err = telebot.NewBot(
 		telebot.Settings{
 			Token:  telegramToken,
 			Poller: &telebot.LongPoller{Timeout: 10 * time.Second},
@@ -25,34 +23,43 @@ func InitBot(
 		return err
 	}
 
-	bot.Handle("/start", func(message *telebot.Message) {
+	utils.Bot.Handle("/start", commands.StartHandler)
+	utils.Bot.Handle("/subs", commands.SubsHandler)
+	utils.Bot.Handle(telebot.OnText, commands.SubscribeHandler)
+	utils.Bot.Handle(&utils.UnsubscribeItemButton, commands.UnsubscribeHandler)
 
-	})
+	go utils.Bot.Start()
 
-	consumer.SubscribeTopics([]string{"cw3-yellow_pages"}, nil)
-
-	defer bot.Start()
+	err = consumer.SubscribeTopics([]string{"cw3-yellow_pages"}, nil)
+	if err != nil {
+		return err
+	}
 
 	for {
 		msg, err := consumer.ReadMessage(-1)
 		if err == nil {
-			var message messages.BlacksmithShop
+			var message []types.BlacksmithShop
 			err = json.Unmarshal([]byte(msg.Value), &message)
 			if err != nil {
 				sentry.CaptureException(err)
-				logger.Error(fmt.Sprintf("Decoder error: %v (%v)\n", err, msg))
+				log.Err(err).Send()
 			}
 
-			// TODO: Shops parsing
+			for _, shop := range message { // Going through all shops
+				if time.Now().Unix() - 1000 > shop.LastOpenTime.Unix() {
+					//commands.SendShopNotification(784726544, shop)
+				}
+				shop.LastOpenTime = time.Now()
+				types.UpdateShop(shop)
+			}
 
 			if err != nil {
 				sentry.CaptureException(err)
-				logger.Error(err)
+				log.Error().Err(err).Send()
 			}
-			logger.Trace(fmt.Sprintf("Message on %s: %s\n", msg.TopicPartition, string(msg.Value)))
 		} else {
 			sentry.CaptureException(err)
-			logger.Error(fmt.Sprintf("Consumer error: %v (%v)\n", err, msg))
+			log.Error().Err(err).Send()
 		}
 	}
 }

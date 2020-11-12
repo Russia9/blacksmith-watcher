@@ -1,78 +1,88 @@
 package main
 
 import (
-	"cw-broker/lib"
+	"blacksmith-watcher/utils"
+	"context"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/getsentry/sentry-go"
-	"github.com/sirupsen/logrus"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"os"
 	"time"
 )
 
-var logger = logrus.New()
-
 func main() {
-	// Logger init
-	logger.Out = os.Stdout
-	logger.Info("Initializing ChatWars Broker")
+	var err error
 
-	// Change logger log level
+	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	switch os.Getenv("CWBW_LOGLEVEL") {
-	case "TRACE":
-		logger.SetLevel(logrus.TraceLevel)
-		break
-	case "DEBUG":
-		logger.SetLevel(logrus.DebugLevel)
-		break
-	case "INFO":
-		logger.SetLevel(logrus.InfoLevel)
-		break
-	case "WARN":
-		logger.SetLevel(logrus.WarnLevel)
-		break
-	case "ERROR":
-		logger.SetLevel(logrus.ErrorLevel)
-		break
-	case "FATAL":
-		logger.SetLevel(logrus.FatalLevel)
-		break
+	case "DISABLED":
+		zerolog.SetGlobalLevel(zerolog.Disabled)
 	case "PANIC":
-		logger.SetLevel(logrus.PanicLevel)
-		break
-	default:
-		logger.SetLevel(logrus.InfoLevel)
+		zerolog.SetGlobalLevel(zerolog.PanicLevel)
+	case "FATAL":
+		zerolog.SetGlobalLevel(zerolog.FatalLevel)
+	case "ERROR":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	case "WARN":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "INFO":
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	case "DEBUG":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "TRACE":
+		zerolog.SetGlobalLevel(zerolog.TraceLevel)
 	}
 
-	SentryDSN := lib.GetEnv("CWBW_SENTRY_DSN", "")
-	SentryEnvironment := lib.GetEnv("CWBW_ENVIRONMENT", "production")
+	utils.Client, err = mongo.NewClient(options.Client().ApplyURI(os.Getenv("CWBW_MONGO_URI")))
+	if err != nil {
+		log.Panic().Err(err).Send()
+	}
+
+	err = utils.Client.Connect(context.Background())
+	if err != nil {
+		log.Panic().Err(err).Send()
+	}
+
+	err = utils.Client.Ping(context.Background(), nil)
+	if err != nil {
+		log.Panic().Err(err).Send()
+	}
+
+	utils.DB = utils.Client.Database(utils.GetEnv("CWBW_MONGO_DBNAME", "blacksmith-watcher"))
+
+	SentryDSN := utils.GetEnv("CWBW_SENTRY_DSN", "")
+	SentryEnvironment := utils.GetEnv("CWBW_ENVIRONMENT", "production")
 
 	// Sentry init
-	logger.Debug("Initializing Sentry")
-	err := sentry.Init(sentry.ClientOptions{
+	err = sentry.Init(sentry.ClientOptions{
 		Dsn:         SentryDSN,
 		Environment: SentryEnvironment,
 	})
 	if err != nil {
-		logger.Warn("Sentry init error: ", err.Error())
+		log.Warn().Err(err).Send()
 	}
 	defer sentry.Flush(2 * time.Second)
 
 	// Kafka consumer init
 	consumer, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers": lib.GetEnv("CWBW_KAFKA_ADDRESS", "localhost"),
+		"bootstrap.servers": utils.GetEnv("CWBW_KAFKA_ADDRESS", "localhost"),
 		"group.id":          "cw3",
 		"auto.offset.reset": "latest",
 	})
 
 	if err != nil {
-		logger.Panic(err)
+		log.Panic().Err(err).Send()
 		sentry.CaptureException(err)
 		return
 	}
 
-	err = InitBot(os.Getenv("CWBW_BOT_TOKEN"), logger, consumer)
+	err = InitBot(os.Getenv("CWBW_BOT_TOKEN"), consumer)
 	if err != nil {
 		sentry.CaptureException(err)
-		logger.Panic(err)
+		log.Panic().Err(err).Send()
 	}
 }

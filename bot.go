@@ -23,10 +23,20 @@ func InitBot(telegramToken string, consumer *kafka.Consumer) error {
 		return err
 	}
 
-	utils.Bot.Handle("/start", commands.StartHandler)
-	utils.Bot.Handle("/subs", commands.SubsHandler)
-	utils.Bot.Handle(telebot.OnText, commands.SubscribeHandler)
-	utils.Bot.Handle(&utils.UnsubscribeItemButton, commands.UnsubscribeHandler)
+	utils.Bot.Handle("/start", commands.StartCommandHandler)
+
+	utils.Bot.Handle("/subscribes", commands.SubscribesCommandHandler)
+	utils.Bot.Handle("/subs", commands.SubscribesCommandHandler)
+
+	utils.Bot.Handle("/subscribe", commands.SubscribeCommandHandler)
+	utils.Bot.Handle("/sub", commands.SubscribeCommandHandler)
+	utils.Bot.Handle(&utils.SubscribeButton, commands.UnsubscribeCommandHandler)
+
+	utils.Bot.Handle("/unsubscribe", commands.UnsubscribeCommandHandler)
+	utils.Bot.Handle("/unsub", commands.UnsubscribeCommandHandler)
+	utils.Bot.Handle(&utils.UnsubscribeButton, commands.UnsubscribeCommandHandler)
+
+	utils.Bot.Handle(telebot.OnText, commands.ItemHandler)
 
 	go utils.Bot.Start()
 
@@ -46,8 +56,11 @@ func InitBot(telegramToken string, consumer *kafka.Consumer) error {
 			}
 
 			for _, shop := range message { // Going through all shops
-				if time.Now().Unix() - 1000 > shop.LastOpenTime.Unix() {
-					//commands.SendShopNotification(784726544, shop)
+				if time.Now().Unix()-310 > shop.LastOpenTime.Unix() {
+
+					//for _, offer := range shop.Offers {
+					//
+					//}
 				}
 				shop.LastOpenTime = time.Now()
 				types.UpdateShop(shop)

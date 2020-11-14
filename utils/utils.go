@@ -10,11 +10,11 @@ var Client *mongo.Client
 var DB *mongo.Database
 var Bot *telebot.Bot
 var (
-	UnsubscribeItem       = &telebot.ReplyMarkup{}
-	UnsubscribeItemButton = UnsubscribeItem.Data("Отписаться", "unsub")
+	Unsubscribe       = &telebot.ReplyMarkup{}
+	UnsubscribeButton = Unsubscribe.Data("Отписаться", "unsub")
 
-	UnsubscribeShop       = &telebot.ReplyMarkup{}
-	UnsubscribeShopButton = UnsubscribeShop.Data("Отписаться", "unsub")
+	Subscribe       = &telebot.ReplyMarkup{}
+	SubscribeButton = Subscribe.Data("Отписаться", "unsub")
 )
 
 func GetEnv(key string, def string) string {

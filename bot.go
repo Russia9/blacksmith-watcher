@@ -4,11 +4,15 @@ import (
 	"blacksmith-watcher/commands"
 	"blacksmith-watcher/types"
 	"blacksmith-watcher/utils"
+	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/getsentry/sentry-go"
 	"github.com/rs/zerolog/log"
+	"go.mongodb.org/mongo-driver/bson"
 	"gopkg.in/tucnak/telebot.v2"
+	"strconv"
 	"time"
 )
 
@@ -49,14 +53,43 @@ func InitBot(telegramToken string, consumer *kafka.Consumer) error {
 		msg, err := consumer.ReadMessage(-1)
 		if err == nil {
 			var message []types.BlacksmithShop
-			err = json.Unmarshal([]byte(msg.Value), &message)
+			err = json.Unmarshal(msg.Value, &message)
 			if err != nil {
 				sentry.CaptureException(err)
 				log.Err(err).Send()
 			}
+			fmt.Println(1)
 
-			for _, shop := range message { // Going through all shops
+			for _, shop := range message {
 				if time.Now().Unix()-310 > shop.LastOpenTime.Unix() {
+					var users = make([]types.User, 0)
+					dbResult, err := utils.DB.Collection("users").Find(context.TODO(), bson.M{"shopsubs": bson.M{"$in": []string{shop.Link}}})
+					if err != nil {
+						log.Error().Err(err).Send()
+						continue
+					}
+					dbResult.Decode(&users)
+					fmt.Println(2, len(users))
+					if err != nil {
+						log.Error().Err(err).Send()
+						continue
+					}
+
+					for _, user := range users {
+						fmt.Println(2)
+						if err != nil {
+							log.Error().Err(err).Send()
+							continue
+						}
+
+						chat, err := utils.Bot.ChatByID(strconv.Itoa(user.ID))
+						if err != nil {
+							log.Error().Err(err).Send()
+							continue
+						}
+						log.Info().Str(strconv.Itoa(user.ID), shop.Link)
+						utils.Bot.Send(chat, shop.Link)
+					}
 
 					//for _, offer := range shop.Offers {
 					//
